@@ -40,8 +40,8 @@ var DefaultGenerator = Generator{
 	Cache:                   new(goCache),
 	Write:                   defaultWriter,
 	GeneratedFilenameSuffix: "_copy.pb.go",
-	ShallowCopyMethod:       "ShallowCopy",
-	ShallowCloneMethod:      "ShallowClone",
+	ShallowCopyMethod:       "Proto_ShallowCopy",
+	ShallowCloneMethod:      "Proto_ShallowClone",
 }
 
 type (
