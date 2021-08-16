@@ -19,13 +19,12 @@ import (
 	"flag"
 	"fmt"
 	"github.com/jhump/gopoet"
+	"github.com/joeycumines/gopoet-protogen"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/descriptorpb"
 	"io"
 	"os"
 	"path"
-	"sync"
 )
 
 func main() {
@@ -37,7 +36,7 @@ func main() {
 }
 
 var DefaultGenerator = Generator{
-	Cache:                   new(goCache),
+	Cache:                   new(gopoet_protogen.Cache),
 	Write:                   defaultWriter,
 	GeneratedFilenameSuffix: "_copy.pb.go",
 	ShallowCopyMethod:       "Proto_ShallowCopy",
@@ -57,6 +56,12 @@ type (
 	// Writer writes to or deletes a generated file, where a nil reader is used to indicate delete, which is used to
 	// handle existing files that are no longer necessary
 	Writer func(filename string, reader io.Reader) error
+
+	Cache interface {
+		AddFile(*protogen.File)
+		MessageType(protoreflect.MessageDescriptor) gopoet.TypeName
+		MessageFields(*protogen.Message) []gopoet_protogen.Field
+	}
 )
 
 func defaultWriter(filename string, reader io.Reader) error {
@@ -80,7 +85,9 @@ func defaultWriter(filename string, reader io.Reader) error {
 func (x *Generator) NewFlagSet() *flag.FlagSet {
 	var (
 		flags   flag.FlagSet
-		addFlag = func(v *string, n string) { flags.StringVar(v, n, *v, "method name generated for all message types unless set to an empty string") }
+		addFlag = func(v *string, n string) {
+			flags.StringVar(v, n, *v, "method name generated for all message types unless set to an empty string")
+		}
 	)
 	addFlag(&x.GeneratedFilenameSuffix, "generated_filename_suffix")
 	addFlag(&x.ShallowCopyMethod, "shallow_copy_method")
@@ -202,207 +209,4 @@ generated for the receiver type, with a name starting with Get.`, x.ShallowCopyM
 	}
 
 	return nil
-}
-
-type (
-	Cache interface {
-		AddFile(*protogen.File)
-		MessageType(protoreflect.MessageDescriptor) gopoet.TypeName
-		MessageFields(*protogen.Message) []Field
-	}
-	Field interface {
-		Name() string
-		OneOf() *protogen.Oneof
-		Fields() []*protogen.Field
-		Type() gopoet.TypeName
-		Getter() gopoet.MethodType
-		OneOfFields() []OneOfField
-	}
-	OneOfField struct {
-		Field  *protogen.Field
-		Type   gopoet.TypeName
-		Getter gopoet.MethodType
-	}
-	goCache struct {
-		data map[protoreflect.FullName]protogen.GoIdent
-		once sync.Once
-	}
-	goField struct {
-		cache       *goCache
-		name        string
-		oneOf       *protogen.Oneof
-		fields      []*protogen.Field
-		once        sync.Once
-		typeName    gopoet.TypeName
-		getter      gopoet.MethodType
-		oneOfFields []OneOfField
-	}
-)
-
-var (
-	_ Cache = (*goCache)(nil)
-	_ Field = (*goField)(nil)
-)
-
-var (
-	bytesType = gopoet.SliceType(gopoet.ByteType)
-)
-
-func (x *goCache) init() {
-	x.data = make(map[protoreflect.FullName]protogen.GoIdent)
-}
-func (x *goCache) AddFile(v *protogen.File) {
-	x.once.Do(x.init)
-	for _, v := range v.Enums {
-		x.addEnum(v)
-	}
-	for _, v := range v.Messages {
-		x.addMessage(v)
-	}
-}
-func (x *goCache) addEnum(v *protogen.Enum) {
-	x.once.Do(x.init)
-	x.data[v.Desc.FullName()] = v.GoIdent
-	for _, v := range v.Values {
-		x.data[v.Desc.FullName()] = v.GoIdent
-	}
-}
-func (x *goCache) addMessage(v *protogen.Message) {
-	x.once.Do(x.init)
-	x.data[v.Desc.FullName()] = v.GoIdent
-	for _, v := range v.Enums {
-		x.addEnum(v)
-	}
-	for _, v := range v.Messages {
-		x.addMessage(v)
-	}
-}
-func (x *goCache) MessageType(v protoreflect.MessageDescriptor) gopoet.TypeName {
-	x.once.Do(x.init)
-	if v != nil {
-		if v := x.lookup(v.FullName()); v != nil {
-			return v
-		}
-	}
-	panic(fmt.Sprintf("unknown type: %v", v))
-}
-func (x *goCache) enumType(v protoreflect.EnumDescriptor) gopoet.TypeName {
-	x.once.Do(x.init)
-	if v != nil {
-		if v := x.lookup(v.FullName()); v != nil {
-			return v
-		}
-	}
-	panic(fmt.Sprintf("unknown type: %v", v))
-}
-func (x *goCache) MessageFields(v *protogen.Message) []Field {
-	x.once.Do(x.init)
-	var (
-		fields []Field
-		seen   = make(map[string]*goField)
-	)
-	for _, field := range v.Fields {
-		var name string
-		if field.Oneof != nil {
-			name = field.Oneof.GoName
-		} else {
-			name = field.GoName
-		}
-		v := seen[name]
-		if v == nil {
-			v = &goField{cache: x, name: name, oneOf: field.Oneof}
-			fields = append(fields, v)
-			seen[name] = v
-		}
-		if v.oneOf != field.Oneof {
-			panic(field)
-		}
-		v.fields = append(v.fields, field)
-	}
-	return fields
-}
-func (x *goCache) lookup(fullName protoreflect.FullName) gopoet.TypeName {
-	if ident := x.data[fullName]; ident != (protogen.GoIdent{}) {
-		return gopoet.NamedType(gopoet.NewPackage(string(ident.GoImportPath)).Symbol(ident.GoName))
-	}
-	return nil
-}
-func (x *goCache) fieldType(v protoreflect.FieldDescriptor) (t gopoet.TypeName) {
-	// https://github.com/jhump/goprotoc/blob/70c8197ef4ea66d11022326b63050f6fa10f6b29/plugins/names.go#L337
-	x.once.Do(x.init)
-	if v.IsMap() {
-		return gopoet.MapType(x.fieldType(v.MapKey()), x.fieldType(v.MapValue()))
-	}
-	switch descriptorpb.FieldDescriptorProto_Type(v.Kind()) {
-	case descriptorpb.FieldDescriptorProto_TYPE_BOOL:
-		t = gopoet.BoolType
-	case descriptorpb.FieldDescriptorProto_TYPE_STRING:
-		t = gopoet.StringType
-	case descriptorpb.FieldDescriptorProto_TYPE_BYTES:
-		t = bytesType
-	case descriptorpb.FieldDescriptorProto_TYPE_INT32,
-		descriptorpb.FieldDescriptorProto_TYPE_SINT32,
-		descriptorpb.FieldDescriptorProto_TYPE_SFIXED32:
-		t = gopoet.Int32Type
-	case descriptorpb.FieldDescriptorProto_TYPE_INT64,
-		descriptorpb.FieldDescriptorProto_TYPE_SINT64,
-		descriptorpb.FieldDescriptorProto_TYPE_SFIXED64:
-		t = gopoet.Int64Type
-	case descriptorpb.FieldDescriptorProto_TYPE_UINT32,
-		descriptorpb.FieldDescriptorProto_TYPE_FIXED32:
-		t = gopoet.Uint32Type
-	case descriptorpb.FieldDescriptorProto_TYPE_UINT64,
-		descriptorpb.FieldDescriptorProto_TYPE_FIXED64:
-		t = gopoet.Uint64Type
-	case descriptorpb.FieldDescriptorProto_TYPE_FLOAT:
-		t = gopoet.Float32Type
-	case descriptorpb.FieldDescriptorProto_TYPE_DOUBLE:
-		t = gopoet.Float64Type
-	case descriptorpb.FieldDescriptorProto_TYPE_GROUP,
-		descriptorpb.FieldDescriptorProto_TYPE_MESSAGE:
-		t = gopoet.PointerType(x.MessageType(v.Message()))
-	case descriptorpb.FieldDescriptorProto_TYPE_ENUM:
-		t = x.enumType(v.Enum())
-	default:
-		panic(fmt.Sprintf("unknown type: %v", v))
-	}
-	if v.IsList() {
-		t = gopoet.SliceType(t)
-	}
-	if v.ParentFile().Syntax() != protoreflect.Proto3 && t.Kind() != gopoet.KindPtr && t.Kind() != gopoet.KindSlice {
-		// for proto2, type is pointer or slice
-		t = gopoet.PointerType(t)
-	}
-	return
-}
-func (x *goField) Name() string              { return x.name }
-func (x *goField) OneOf() *protogen.Oneof    { return x.oneOf }
-func (x *goField) Fields() []*protogen.Field { return x.fields }
-func (x *goField) init() {
-	if x.oneOf != nil {
-		// https://github.com/protocolbuffers/protobuf-go/blob/fc9592f7ac4bade8f83e636263f8f07715c698d1/cmd/protoc-gen-go/internal_gengo/main.go#L810
-		x.typeName = gopoet.NamedType(gopoet.NewPackage(string(x.oneOf.GoIdent.GoImportPath)).Symbol("is" + x.oneOf.GoIdent.GoName))
-		for _, field := range x.fields {
-			x.oneOfFields = append(x.oneOfFields, OneOfField{
-				Field:  field,
-				Type:   gopoet.NamedType(gopoet.NewPackage(string(field.GoIdent.GoImportPath)).Symbol(field.GoIdent.GoName)),
-				Getter: gopoet.MethodType{Name: `Get` + field.GoName, Signature: gopoet.Signature{Results: []gopoet.ArgType{{Type: x.cache.fieldType(field.Desc)}}}},
-			})
-		}
-	} else {
-		x.typeName = x.cache.fieldType(x.fields[0].Desc)
-	}
-	x.getter = gopoet.MethodType{Name: `Get` + x.name, Signature: gopoet.Signature{Results: []gopoet.ArgType{{Type: x.typeName}}}}
-}
-func (x *goField) Type() gopoet.TypeName {
-	x.once.Do(x.init)
-	return x.typeName
-}
-func (x *goField) Getter() gopoet.MethodType {
-	x.once.Do(x.init)
-	return x.getter
-}
-func (x *goField) OneOfFields() []OneOfField {
-	x.once.Do(x.init)
-	return x.oneOfFields
 }
