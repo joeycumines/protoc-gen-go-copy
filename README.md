@@ -4,7 +4,7 @@ Command protoc-gen-go-copy is a protoc plugin that generates code to copy messag
 
 ## Features
 
-See also [examples/addressbook](examples/addressbook).
+See also [examples](examples).
 
 ```go
 // NOTE: generated methods names are configurable
@@ -33,7 +33,8 @@ func (x *Policy) Proto_ShallowCopy(v interface{}) {
 		} else {
 			func() {
 				if v, ok := v.(interface{ GetDeletePerson() *Policy_DeletePerson }); ok {
-					if v := v.GetDeletePerson(); v != nil {
+					var defaultValue *Policy_DeletePerson
+					if v := v.GetDeletePerson(); v != defaultValue {
 						x.Spec = &Policy_DeletePerson_{DeletePerson: v}
 						return
 					}
@@ -41,13 +42,15 @@ func (x *Policy) Proto_ShallowCopy(v interface{}) {
 				if v, ok := v.(interface {
 					GetDefaultPolicyRejectBlocked() *DefaultPolicy_RejectBlocked
 				}); ok {
-					if v := v.GetDefaultPolicyRejectBlocked(); v != nil {
+					var defaultValue *DefaultPolicy_RejectBlocked
+					if v := v.GetDefaultPolicyRejectBlocked(); v != defaultValue {
 						x.Spec = &Policy_DefaultPolicyRejectBlocked{DefaultPolicyRejectBlocked: v}
 						return
 					}
 				}
 				if v, ok := v.(interface{ GetAny() *anypb.Any }); ok {
-					if v := v.GetAny(); v != nil {
+					var defaultValue *anypb.Any
+					if v := v.GetAny(); v != defaultValue {
 						x.Spec = &Policy_Any{Any: v}
 						return
 					}

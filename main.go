@@ -145,7 +145,13 @@ generated for the receiver type, with a name starting with Get.`, x.ShallowCopyM
 							elem.Println(`func() {`)
 							for _, oneOfField := range field.OneOfFields() {
 								elem.Printlnf(`if v, ok := v.(%s); ok {`, gopoet.InterfaceType(nil, oneOfField.Getter))
-								elem.Printlnf(`if v := v.%s(); v != nil {`, oneOfField.Getter.Name)
+								if fieldType := oneOfField.Getter.Signature.Results[0].Type; fieldType.Kind() == gopoet.KindSlice {
+									// special case to handle field of types `bytes` - can't do slice == slice
+									elem.Printlnf(`if v := v.%s(); v != nil {`, oneOfField.Getter.Name)
+								} else {
+									elem.Printlnf(`var defaultValue %s`, fieldType)
+									elem.Printlnf(`if v := v.%s(); v != defaultValue {`, oneOfField.Getter.Name)
+								}
 								elem.Printlnf(`x.%s = &%s{%s: v}`, field.Name(), oneOfField.Type, oneOfField.Field.GoName)
 								elem.Println(`return`)
 								elem.Println(`}`)
