@@ -22,6 +22,7 @@ import (
 	"github.com/joeycumines/gopoet-protogen"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/pluginpb"
 	"path"
 )
 
@@ -70,6 +71,8 @@ func (x *Generator) NewFlagSet() *flag.FlagSet {
 }
 
 func (x Generator) Generate() error {
+	x.Plugin.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
+
 	for _, file := range x.Plugin.Files {
 		x.Cache.AddFile(file)
 
@@ -98,16 +101,41 @@ func (x Generator) Generate() error {
 				elem.SetComment(fmt.Sprintf(`%s copies fields, from v to the receiver, using field getters.
 Note that v is of an arbitrary type, which may implement any number of the
 field getters, which are defined as any methods of the same signature as those
-generated for the receiver type, with a name starting with Get.`, x.ShallowCopyMethod))
+generated for the receiver type, with a name starting with Get.
+WARNING: Optional fields may be ignored, if v is not the receiver type.`, x.ShallowCopyMethod))
 				elem.AddArg(`v`, gopoet.InterfaceType(nil))
 				if len(fields) != 0 {
 					elem.Printlnf(`switch v := v.(type) {`)
 					elem.Printlnf(`case %s:`, gopoet.PointerType(t))
+					var hasOptional bool
 					for _, field := range fields {
+						if gopoet_protogen.FieldIsOptional(field) {
+							hasOptional = true
+							continue
+						}
 						elem.Printlnf(`x.%s = v.%s()`, field.Name(), field.Getter().Name)
+					}
+					if hasOptional {
+						elem.Println(`if v != nil {`)
+						for _, field := range fields {
+							if gopoet_protogen.FieldIsOptional(field) {
+								elem.Printlnf(`x.%s = v.%s`, field.Name(), field.Name())
+							}
+						}
+						elem.Println(`} else {`)
+						for _, field := range fields {
+							if gopoet_protogen.FieldIsOptional(field) {
+								elem.Printlnf(`x.%s = nil`, field.Name())
+							}
+						}
+						elem.Println(`}`)
 					}
 					elem.Println(`default:`)
 					for _, field := range fields {
+						if gopoet_protogen.FieldIsOptional(field) {
+							// special case: the generated getters don't support presence, so we can't use them
+							continue
+						}
 						elem.Printlnf(`if v, ok := v.(%s); ok {`, gopoet.InterfaceType(nil, field.Getter()))
 						elem.Printlnf(`x.%s = v.%s()`, field.Name(), field.Getter().Name)
 						if field.OneOf() != nil {
@@ -154,6 +182,7 @@ generated for the receiver type, with a name starting with Get.`, x.ShallowCopyM
 				genMsg(msg)
 			}
 		}
+
 		for _, msg := range file.Messages {
 			genMsg(msg)
 		}

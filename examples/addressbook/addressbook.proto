@@ -34,7 +34,7 @@
 // https://github.com/protocolbuffers/protobuf/blob/master/examples/addressbook.proto
 
 syntax = "proto3";
-package tutorial;
+package examples.addressbook;
 option go_package = "github.com/joeycumines/protoc-gen-go-copy/examples/addressbook";
 
 import "google/protobuf/timestamp.proto";

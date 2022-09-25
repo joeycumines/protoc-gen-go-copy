@@ -100,3 +100,9 @@ using this plugin.
 | generated_filename_suffix | filename suffix for all generated files, defaults to `_copy.pb.go` |
 | shallow_copy_method | method name generated for all message types unless set to an empty string, defaults to `Proto_ShallowCopy` |
 | shallow_clone_method | method name generated for all message types unless set to an empty string, defaults to `Proto_ShallowClone` |
+
+## Caveats
+
+- As the (`protoc-gen-go`) generated getters don't support field presence (e.g. returning `bool` not `*bool`), generated
+  shallow copy methods cannot support, and therefore ignore, optional fields, for sources of a different type to the
+  destination

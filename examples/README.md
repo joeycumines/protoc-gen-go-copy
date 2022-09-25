@@ -22,7 +22,9 @@ go install
 
 # generate the code, into the same directory as the proto file, see also the root readme, and google's reference docs
 find examples -type f -name '*.proto' -exec \
-    protoc --proto_path=. --go_out=. --go_opt=paths=source_relative --go-copy_out=. --go-copy_opt=paths=source_relative \
+    protoc \
+    --experimental_allow_proto3_optional \
+    --proto_path=. --go_out=. --go_opt=paths=source_relative --go-copy_out=. --go-copy_opt=paths=source_relative \
     {} +
 
 # validate the generated code
